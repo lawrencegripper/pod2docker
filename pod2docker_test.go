@@ -21,9 +21,8 @@ func TestPod2DockerVolumeGenerated(t *testing.T) {
 			},
 		},
 		{
-			Name:            "worker",
-			Image:           "doesntmatter",
-			ImagePullPolicy: apiv1.PullAlways,
+			Name:  "worker",
+			Image: "doesntmatter",
 			VolumeMounts: []apiv1.VolumeMount{
 				{
 					Name:      "sharedvolume",
@@ -72,9 +71,8 @@ func TestPod2DockerGeneratesValidOutputEncoding(t *testing.T) {
 			Args:  []string{"encoding"},
 		},
 		{
-			Name:            "worker",
-			Image:           "marge",
-			ImagePullPolicy: apiv1.PullAlways,
+			Name:  "worker",
+			Image: "marge",
 		},
 	}
 
@@ -92,5 +90,36 @@ func TestPod2DockerGeneratesValidOutputEncoding(t *testing.T) {
 	t.Log(podCommand)
 	if strings.Contains(podCommand, "&lt;") {
 		t.Error("output contains incorrect encoding")
+	}
+}
+
+func TestPod2DockerPullAlways(t *testing.T) {
+	containers := []apiv1.Container{
+		{
+			Name:            "sidecar",
+			Image:           "barry",
+			Args:            []string{"encoding"},
+			ImagePullPolicy: apiv1.PullAlways,
+		},
+		{
+			Name:  "worker",
+			Image: "marge",
+		},
+	}
+
+	// Todo: Pull this out into a standalone package once stabilized
+	podCommand, err := GetBashCommand(PodComponents{
+		Containers: containers,
+		PodName:    "examplePodName",
+		Volumes:    nil,
+	})
+
+	if err != nil {
+		t.Error(err)
+	}
+
+	t.Log(podCommand)
+	if !strings.Contains(podCommand, "docker pull barry") {
+		t.Error("docker pull command is missing")
 	}
 }

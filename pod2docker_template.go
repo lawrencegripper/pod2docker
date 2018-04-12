@@ -28,20 +28,23 @@ docker login -u {{.Username}} -p {{.Password}} {{.Server}}
 
 function cleanup(){
     {{/* Remove the containers, network and volumes */}}
+
     echo 'Pod Exited: Removing all containers'
-    
     if ls container-* 1> /dev/null 2>&1; then
         for line in ` + "`ls container-*`" + `
         do    
-            id=$(cat $line) 
+            id=$(cat $line)
+            echo '-Logs container..'
+            docker logs $id
             echo '-Removing container..'
             docker rm -f $id
-            rm $line
+            rm -f $line
+            rm -f *.log
         done    
     fi
     echo '-Removing pause container..'
     docker rm -f {{$podName}} || echo 'Remove pause container failed'
-    rm ./pauseid.cid
+    rm -f ./pauseid.cid
     echo '-Removing network container..'
     docker network rm {{$podName}} || echo 'Remove network failed'
     
@@ -81,7 +84,6 @@ docker run -d --network container:{{$podName}} --ipc container:{{$podName}} \
 {{end}}
 
 {{/* Symlink all container logs files to task directory */}}
-{{/* sudo ls item-* | xargs -n 1 cat | sudo xargs -n 1 docker inspect --format='{{.LogPath}}' | xargs -n 1 -i ln -s {} ./barry.txt */}}
 {{range $index, $container := .Containers}}
 container_{{$index}}_ID=$(<./container-{{$index}}.cid)
 container_{{$index}}_Log_Path=$(docker inspect --format='{{"{{.LogPath}}"}}' $container_{{$index}}_ID)
@@ -98,10 +100,9 @@ id=$(cat $line)
 docker wait $id &
 done
 
-#wait -n
 while [ $(jobs -p | wc -l) -ne {{.Containers | len}} ]
 do
-   sleep 1
+   sleep 2
 done
 
 
@@ -113,7 +114,7 @@ do
     id=$(cat $line) 
     exitCode=$(docker inspect $id | jq '.[].State.ExitCode')
     echo 'ID: ' $id ' ExitCode: ' $exitCode
-    if [ $exitCode -gt 0 ]
+    if [ $exitCode -ne 0 ]
     then
         $overallExitCode=$exitCode
     fi

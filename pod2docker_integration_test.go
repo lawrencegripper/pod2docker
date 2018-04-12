@@ -2,13 +2,16 @@ package pod2docker
 
 import (
 	"io/ioutil"
+	"math/rand"
+	"os"
 	"os/exec"
 	"testing"
+	"time"
 
 	apiv1 "k8s.io/api/core/v1"
 )
 
-func TestPod2DockerVolume_Usable(t *testing.T) {
+func TestPod2DockerVolume_Integration(t *testing.T) {
 
 	containers := []apiv1.Container{
 		{
@@ -36,10 +39,9 @@ func TestPod2DockerVolume_Usable(t *testing.T) {
 		},
 	}
 
-	// Todo: Pull this out into a standalone package once stabilized
 	podCommand, err := GetBashCommand(PodComponents{
 		Containers: containers,
-		PodName:    "examplePodName4",
+		PodName:    randomName(6),
 		Volumes: []apiv1.Volume{
 			{
 				Name: "sharedvolume",
@@ -68,4 +70,124 @@ func TestPod2DockerVolume_Usable(t *testing.T) {
 	}
 
 	t.Log(string(out))
+}
+
+func TestPod2DockerNetwork_Integration(t *testing.T) {
+
+	containers := []apiv1.Container{
+		{
+			Name:  "sidecar",
+			Image: "nginx",
+		},
+		{
+			Name:    "worker",
+			Image:   "busybox",
+			Command: []string{"wget localhost"},
+		},
+	}
+
+	podCommand, err := GetBashCommand(PodComponents{
+		Containers: containers,
+		PodName:    randomName(6),
+		Volumes:    []apiv1.Volume{},
+	})
+
+	if err != nil {
+		t.Error(err)
+	}
+
+	t.Log(podCommand)
+
+	cmd := exec.Command("/bin/bash", "-c", podCommand)
+
+	wd, _ := os.Getwd()
+	cmd.Dir = wd
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Error(err)
+	}
+
+	t.Log(string(out))
+}
+
+func TestPod2DockerIPCAndHostDir_Integration(t *testing.T) {
+
+	containers := []apiv1.Container{
+		{
+			Name:  "sidecar",
+			Image: "busybox",
+			VolumeMounts: []apiv1.VolumeMount{
+				{
+					Name:      "sharedvolume",
+					MountPath: "/testdata",
+				},
+			},
+			Command: []string{"nslookup worker"},
+		},
+		{
+			Name:            "worker",
+			Image:           "ubuntu",
+			ImagePullPolicy: apiv1.PullAlways,
+			VolumeMounts: []apiv1.VolumeMount{
+				{
+					Name:      "sharedvolume",
+					MountPath: "/testdata",
+				},
+			},
+			Command: []string{"nslookup sidecar"},
+		},
+	}
+
+	podCommand, err := GetBashCommand(PodComponents{
+		Containers: containers,
+		PodName:    randomName(6),
+		Volumes: []apiv1.Volume{
+			{
+				Name: "sharedvolume",
+				VolumeSource: apiv1.VolumeSource{
+					HostPath: &apiv1.HostPathVolumeSource{
+						Path: "$HOSTDIR/testdata",
+					},
+				},
+			},
+		},
+	})
+
+	if err != nil {
+		t.Error(err)
+	}
+
+	t.Log(podCommand)
+
+	cmd := exec.Command("/bin/bash", "-c", podCommand)
+
+	env := os.Getenv("HOSTDIR")
+	if env == "" {
+		wd, _ := os.Getwd()
+		cmd.Dir = wd
+	} else {
+		cmd.Dir = env
+	}
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Error(err)
+	}
+
+	t.Log(string(out))
+}
+
+var lettersLower = []rune("abcdefghijklmnopqrstuvwxyz")
+
+// RandomName random letter sequence
+func randomName(n int) string {
+	return randFromSelection(n, lettersLower)
+}
+
+func randFromSelection(length int, choices []rune) string {
+	b := make([]rune, length)
+	rand.Seed(time.Now().UnixNano())
+	for i := range b {
+		b[i] = choices[rand.Intn(len(choices))]
+	}
+	return string(b)
 }
