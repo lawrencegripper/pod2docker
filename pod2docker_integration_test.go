@@ -115,14 +115,14 @@ func TestPod2DockerIPCAndHostDir_Integration(t *testing.T) {
 	containers := []apiv1.Container{
 		{
 			Name:  "sidecar",
-			Image: "busybox",
+			Image: "ubuntu",
 			VolumeMounts: []apiv1.VolumeMount{
 				{
 					Name:      "sharedvolume",
 					MountPath: "/testdata",
 				},
 			},
-			Command: []string{"nslookup worker"},
+			Command: []string{"/testdata/readpipe.sh"},
 		},
 		{
 			Name:            "worker",
@@ -134,7 +134,7 @@ func TestPod2DockerIPCAndHostDir_Integration(t *testing.T) {
 					MountPath: "/testdata",
 				},
 			},
-			Command: []string{"nslookup sidecar"},
+			Command: []string{"/testdata/writepipe.sh"},
 		},
 	}
 
