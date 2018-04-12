@@ -1,4 +1,4 @@
-# Pod-2-Docker
+# Pod-2-Docker [![Build Status](https://travis-ci.org/lawrencegripper/pod2docker.svg?branch=master)](https://travis-ci.org/lawrencegripper/pod2docker)
 
 Simple utility which takes a Kubernetes Pod definition and generates a Bash script which emulates the Pods behavior on a VM using docker commands. 
 
