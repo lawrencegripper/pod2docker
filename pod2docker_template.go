@@ -27,6 +27,14 @@ docker login -u {{.Username}} -p {{.Password}} {{.Server}}
 {{end}}
 
 function cleanup(){
+    {{/* Take a copy of the container log is removed when container is deleted */}}
+    echo 'Pod Exited: Copying logs'    
+    {{range $index, $container := .Containers}}
+    container_{{$index}}_ID=$(<./container-{{$index}}.cid)
+    container_{{$index}}_Log_Path=$(docker inspect --format='{{"{{.LogPath}}"}}' $container_{{$index}}_ID)
+    cp $container_{{$index}}_Log_Path ./{{$container.Name}}.log
+    {{end}}
+
     {{/* Remove the containers, network and volumes */}}
 
     echo 'Pod Exited: Removing all containers'
@@ -39,7 +47,6 @@ function cleanup(){
             echo '-Removing container..'
             docker rm -f $id
             rm -f $line
-            rm -f *.log
         done    
     fi
     echo '-Removing pause container..'
@@ -87,7 +94,7 @@ docker run -d --network container:{{$podName}} --ipc container:{{$podName}} \
 {{range $index, $container := .Containers}}
 container_{{$index}}_ID=$(<./container-{{$index}}.cid)
 container_{{$index}}_Log_Path=$(docker inspect --format='{{"{{.LogPath}}"}}' $container_{{$index}}_ID)
-ln -s $container_{{$index}}_Log_Path ./{{$container.Name}}.log
+ln -f -s $container_{{$index}}_Log_Path ./{{$container.Name}}.log
 {{end}}
 
 echo 'Running Pod: {{.PodName}}'
