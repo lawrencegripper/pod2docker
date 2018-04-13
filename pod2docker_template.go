@@ -96,11 +96,11 @@ echo 'Running Pod: {{.PodName}}'
 echo 'Waiting for any of the containers to exit'
 for line in ` + "`ls container-*`" + `
 do    
-id=$(cat $line) 
-docker wait $id &
+    id=$(cat $line) 
+    docker wait $id &
 done
 
-while [ $(jobs -p | wc -l) -ne {{.Containers | len}} ]
+while [ $(jobs -p | wc -l) == {{.Containers | len}} ]
 do
    sleep 2
 done
