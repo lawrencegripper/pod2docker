@@ -70,7 +70,7 @@
   branch = "master"
   name = "k8s.io/api"
   packages = ["core/v1"]
-  revision = "847e24b2c0e587a6a097d187ebd72e1ca24de001"
+  revision = "b7d77fa220f5130ec63c2ca7167dd9653449c64d"
 
 [[projects]]
   branch = "master"
@@ -98,11 +98,11 @@
     "pkg/watch",
     "third_party/forked/golang/reflect"
   ]
-  revision = "895b82eadff27f5a6b19d80628a04645823c1e46"
+  revision = "6426d21f392c6d0e710af98bdfe6fb7334b3e11a"
 
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "eda3a5c7e3cdf59ad4d6f80f1c3708d71ce4ea50225dfa98886438d9e11bb8d8"
+  inputs-digest = "be8abf6251ca6952740c1b5f7aaebe7911eb90adbaa69e1681ec8adba3ed916b"
   solver-name = "gps-cdcl"
   solver-version = 1
