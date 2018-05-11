@@ -12,11 +12,6 @@ if ! type 'docker' > /dev/null; then
   exit 1
 fi
 
-if ! type 'jq' > /dev/null; then
-  echo 'jq not installed... exiting'
-  exit 1
-fi
-
 {{/* Vars */}}
 {{$podName := .PodName}}
 {{$volumes := .Volumes}}
@@ -119,11 +114,15 @@ overallExitCode=0
 for line in ` + "`ls container-*`" + `
 do    
     id=$(cat $line) 
-    exitCode=$(docker inspect $id | jq '.[].State.ExitCode')
+    echo 'Getting exitcode'
+    exitCode=$(docker inspect -f {{"{{.State.ExitCode}}"}} $id)
+    
     echo 'ID: ' $id ' ExitCode: ' $exitCode
-    if [ $exitCode -ne 0 ]
+    echo 'Checking exitcode'
+    if (($exitCode != 0))
     then
-        $overallExitCode=$exitCode
+        echo 'Assigning exitcode'
+        overallExitCode=$exitCode
     fi
 done
 

@@ -5,6 +5,7 @@ import (
 	"math/rand"
 	"os"
 	"os/exec"
+	"syscall"
 	"testing"
 	"time"
 
@@ -66,6 +67,53 @@ func TestPod2DockerVolume_Integration(t *testing.T) {
 	cmd.Dir = tempdir
 	out, err := cmd.CombinedOutput()
 	if err != nil {
+		t.Error(err)
+	}
+
+	t.Log(string(out))
+}
+
+func TestPod2DockerExitCode_Integration(t *testing.T) {
+
+	containers := []apiv1.Container{
+		{
+			Name:    "sidecar",
+			Image:   "ubuntu",
+			Command: []string{"bash -c 'exit 13'"},
+		},
+		{
+			Name:            "worker",
+			Image:           "ubuntu",
+			ImagePullPolicy: apiv1.PullAlways,
+			Command:         []string{"bash -c 'sleep 100 && exit 0'"},
+		},
+	}
+
+	podCommand, err := GetBashCommand(PodComponents{
+		Containers: containers,
+		PodName:    randomName(6),
+	})
+
+	if err != nil {
+		t.Error(err)
+	}
+
+	t.Log(podCommand)
+
+	cmd := exec.Command("/bin/bash", "-c", podCommand)
+	tempdir, err := ioutil.TempDir("", "pod2docker")
+	if err != nil {
+		t.Error(err)
+	}
+	cmd.Dir = tempdir
+
+	out, err := cmd.CombinedOutput()
+	if msg, ok := err.(*exec.ExitError); ok {
+		exitCode := (msg.Sys().(syscall.WaitStatus).ExitStatus())
+		if exitCode != 13 {
+			t.Errorf("Expected exit code of: %v got: %v", 13, exitCode)
+		}
+	} else if err != nil {
 		t.Error(err)
 	}
 
