@@ -25,9 +25,12 @@ function cleanup(){
     {{/* Take a copy of the container log is removed when container is deleted */}}
     echo 'Pod Exited: Copying logs'    
     {{range $index, $container := .Containers}}
-    container_{{$index}}_ID=$(<./container-{{$index}}.cid)
-    container_{{$index}}_Log_Path=$(docker inspect --format='{{"{{.LogPath}}"}}' $container_{{$index}}_ID)
-    cp $container_{{$index}}_Log_Path ./{{$container.Name}}.log
+    if [ -f ./{{$container.Name}}.log ]; then
+        container_{{$index}}_ID=$(<./container-{{$index}}.cid)
+        container_{{$index}}_Log_Path=$(docker inspect --format='{{"{{.LogPath}}"}}' $container_{{$index}}_ID)
+        rm ./{{$container.Name}}.log {{/* Remove the existing symlink */}}
+        cp $container_{{$index}}_Log_Path ./{{$container.Name}}.log
+    fi
     {{end}}
 
     {{/* Remove the containers, network and volumes */}}
