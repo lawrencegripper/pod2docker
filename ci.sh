@@ -3,8 +3,6 @@ set -e
 trap cleanup EXIT
 function cleanup(){
     docker rm -f pod2dockerci
-    rm -f ./sidecar.log
-    rm -f ./worker.log
 }
 
 docker build -t ci -f ci.Dockerfile . 
