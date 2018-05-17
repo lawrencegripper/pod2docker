@@ -88,6 +88,69 @@ func TestPod2DockerVolume_Integration(t *testing.T) {
 
 }
 
+func TestPod2DockerInitContainer_Integration(t *testing.T) {
+
+	initContainers := []apiv1.Container{
+		{
+			Name:  "sidecar",
+			Image: "ubuntu",
+			VolumeMounts: []apiv1.VolumeMount{
+				{
+					Name:      "sharedvolume",
+					MountPath: "/home",
+				},
+			},
+			Command: []string{"bash -c 'exit 10'"},
+		},
+	}
+	containers := []apiv1.Container{
+		{
+			Name:  "sidecar",
+			Image: "ubuntu",
+			VolumeMounts: []apiv1.VolumeMount{
+				{
+					Name:      "sharedvolume",
+					MountPath: "/home",
+				},
+			},
+			Command: []string{"bash -c 'exit 13'"},
+		},
+	}
+
+	podCommand, err := GetBashCommand(PodComponents{
+		Containers:     containers,
+		InitContainers: initContainers,
+		PodName:        randomName(6),
+	})
+
+	if err != nil {
+		t.Error(err)
+	}
+
+	t.Log(podCommand)
+
+	cmd := exec.Command("/bin/bash", "-c", podCommand)
+	tempdir, err := ioutil.TempDir("", "pod2docker")
+	if err != nil {
+		t.Error(err)
+	}
+	cmd.Dir = tempdir
+	out, err := cmd.CombinedOutput()
+	if exiterr, ok := err.(*exec.ExitError); ok {
+		// The program has exited with an exit code != 0
+		if status, ok := exiterr.Sys().(syscall.WaitStatus); ok {
+			exitCode := status.ExitStatus()
+			if exitCode != 10 {
+				t.Errorf("Expected exitcode 10 got: %v", exitCode)
+			}
+		}
+	}
+
+	t.Log(string(out))
+	checkCleanup(t, defaultNetworkCount)
+
+}
+
 func TestPod2DockerExitCode_Integration(t *testing.T) {
 
 	containers := []apiv1.Container{

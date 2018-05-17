@@ -73,6 +73,22 @@ docker volume create {{$podName}}_{{.Name}}
 {{end}}
 {{end}}
 
+{{/* Run the init containers in the Pod. Attaching to shared namespace */}}
+{{range $index, $container := .InitContainers}} 
+    {{if isPullAlways .}}
+docker pull {{$container.Image}}
+    {{end}}
+docker run --rm --network container:{{$podName}} --ipc container:{{$podName}} \
+    {{- range $index, $envs := $container.Env}}
+-e "{{$envs.Name}}:{{$envs.Value}}" \
+    {{- end}}
+    {{- range $index, $mount := getValidVolumeMounts $container $volumes}}
+-v {{$podName}}_{{$mount.Name}}:{{$mount.MountPath}} \
+    {{- end}}
+--cidfile=./initcontainer-{{$index}}.cid {{$container.Image}} {{getLaunchCommand $container}}
+{{end}}
+
+
 {{/* Run the containers in the Pod. Attaching to shared namespace */}}
 {{range $index, $container := .Containers}} 
     {{if isPullAlways .}}
