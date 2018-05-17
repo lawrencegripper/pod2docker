@@ -7,6 +7,8 @@ import (
 	"math/rand"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -70,8 +72,6 @@ func TestPod2DockerVolume_Integration(t *testing.T) {
 		t.Error(err)
 	}
 
-	t.Log(podCommand)
-
 	cmd := exec.Command("/bin/bash", "-c", podCommand)
 	tempdir, err := ioutil.TempDir("", "pod2docker")
 	if err != nil {
@@ -86,6 +86,254 @@ func TestPod2DockerVolume_Integration(t *testing.T) {
 	t.Log(string(out))
 	checkCleanup(t, defaultNetworkCount)
 
+}
+
+func TestPod2DockerLogs_Integration(t *testing.T) {
+
+	initContainers := []apiv1.Container{
+		{
+			Name:    "init1",
+			Image:   "ubuntu",
+			Command: []string{"echo 'init1'"},
+		},
+		{
+			Name:    "init2",
+			Image:   "ubuntu",
+			Command: []string{"echo 'init2'"},
+		},
+	}
+	containers := []apiv1.Container{
+		{
+			Name:    "container1",
+			Image:   "ubuntu",
+			Command: []string{"echo 'container1'"},
+		},
+		{
+			Name:    "container2",
+			Image:   "ubuntu",
+			Command: []string{"echo 'container2'"},
+		},
+	}
+
+	podCommand, err := GetBashCommand(PodComponents{
+		Containers:     containers,
+		InitContainers: initContainers,
+		PodName:        randomName(6),
+	})
+
+	if err != nil {
+		t.Error(err)
+	}
+
+	cmd := exec.Command("/bin/bash", "-c", podCommand)
+	tempdir, err := ioutil.TempDir("", "pod2docker")
+	if err != nil {
+		t.Error(err)
+	}
+	cmd.Dir = tempdir
+	out, err := cmd.CombinedOutput()
+	if exiterr, ok := err.(*exec.ExitError); ok {
+		// The program has exited with an exit code != 0
+		if status, ok := exiterr.Sys().(syscall.WaitStatus); ok {
+			exitCode := status.ExitStatus()
+			if exitCode != 0 {
+				t.Errorf("Expected 0 exitcode got: %v", exitCode)
+			}
+		}
+	}
+
+	checkFileContents(filepath.Join(tempdir, "./init1.log"), "init1", t)
+	checkFileContents(filepath.Join(tempdir, "./init2.log"), "init2", t)
+	checkFileContents(filepath.Join(tempdir, "./container1.log"), "container1", t)
+	checkFileContents(filepath.Join(tempdir, "./container2.log"), "container2", t)
+	t.Log(string(out))
+	checkCleanup(t, defaultNetworkCount)
+}
+
+func TestPod2DockerInitContainer_Integration(t *testing.T) {
+	testcases := []struct {
+		name             string
+		initContainers   []apiv1.Container
+		containers       []apiv1.Container
+		expectedExitCode int
+	}{
+		{
+			name: "failing single init container",
+			initContainers: []apiv1.Container{
+				{
+					Name:  "sidecar",
+					Image: "ubuntu",
+					VolumeMounts: []apiv1.VolumeMount{
+						{
+							Name:      "sharedvolume",
+							MountPath: "/home",
+						},
+					},
+					Command: []string{"bash -c 'exit 10'"},
+				},
+			},
+			containers: []apiv1.Container{
+				{
+					Name:  "sidecar",
+					Image: "ubuntu",
+					VolumeMounts: []apiv1.VolumeMount{
+						{
+							Name:      "sharedvolume",
+							MountPath: "/home",
+						},
+					},
+					Command: []string{"bash -c 'exit 13'"},
+				},
+			},
+			expectedExitCode: 10,
+		},
+		{
+			name: "failing second init container",
+			initContainers: []apiv1.Container{
+				{
+					Name:  "sidecar",
+					Image: "ubuntu",
+					VolumeMounts: []apiv1.VolumeMount{
+						{
+							Name:      "sharedvolume",
+							MountPath: "/home",
+						},
+					},
+					Command: []string{"echo 'first init container'"},
+				},
+				{
+					Name:  "sidecar",
+					Image: "ubuntu",
+					VolumeMounts: []apiv1.VolumeMount{
+						{
+							Name:      "sharedvolume",
+							MountPath: "/home",
+						},
+					},
+					Command: []string{"bash -c 'exit 11'"},
+				},
+			},
+			containers: []apiv1.Container{
+				{
+					Name:  "sidecar",
+					Image: "ubuntu",
+					VolumeMounts: []apiv1.VolumeMount{
+						{
+							Name:      "sharedvolume",
+							MountPath: "/home",
+						},
+					},
+					Command: []string{"bash -c 'exit 13'"},
+				},
+			},
+			expectedExitCode: 11,
+		},
+		{
+			name: "successful single init container",
+			initContainers: []apiv1.Container{
+				{
+					Name:  "sidecar",
+					Image: "ubuntu",
+					VolumeMounts: []apiv1.VolumeMount{
+						{
+							Name:      "sharedvolume",
+							MountPath: "/home",
+						},
+					},
+					Command: []string{"echo 'hello'"},
+				},
+			},
+			containers: []apiv1.Container{
+				{
+					Name:  "sidecar",
+					Image: "ubuntu",
+					VolumeMounts: []apiv1.VolumeMount{
+						{
+							Name:      "sharedvolume",
+							MountPath: "/home",
+						},
+					},
+					Command: []string{"bash -c 'exit 13'"},
+				},
+			},
+			expectedExitCode: 13,
+		},
+		{
+			name: "sucessful double init container",
+			initContainers: []apiv1.Container{
+				{
+					Name:  "sidecar",
+					Image: "ubuntu",
+					VolumeMounts: []apiv1.VolumeMount{
+						{
+							Name:      "sharedvolume",
+							MountPath: "/home",
+						},
+					},
+					Command: []string{"echo 'hello'"},
+				},
+				{
+					Name:  "sidecar",
+					Image: "ubuntu",
+					VolumeMounts: []apiv1.VolumeMount{
+						{
+							Name:      "sharedvolume",
+							MountPath: "/home",
+						},
+					},
+					Command: []string{"echo 'world'"},
+				},
+			},
+			containers: []apiv1.Container{
+				{
+					Name:  "sidecar",
+					Image: "ubuntu",
+					VolumeMounts: []apiv1.VolumeMount{
+						{
+							Name:      "sharedvolume",
+							MountPath: "/home",
+						},
+					},
+					Command: []string{"bash -c 'exit 13'"},
+				},
+			},
+			expectedExitCode: 13,
+		},
+	}
+
+	for _, test := range testcases {
+		t.Run(test.name, func(t *testing.T) {
+			podCommand, err := GetBashCommand(PodComponents{
+				Containers:     test.containers,
+				InitContainers: test.initContainers,
+				PodName:        randomName(6),
+			})
+
+			if err != nil {
+				t.Error(err)
+			}
+
+			cmd := exec.Command("/bin/bash", "-c", podCommand)
+			tempdir, err := ioutil.TempDir("", "pod2docker")
+			if err != nil {
+				t.Error(err)
+			}
+			cmd.Dir = tempdir
+			out, err := cmd.CombinedOutput()
+			if exiterr, ok := err.(*exec.ExitError); ok {
+				// The program has exited with an exit code != 0
+				if status, ok := exiterr.Sys().(syscall.WaitStatus); ok {
+					exitCode := status.ExitStatus()
+					if exitCode != test.expectedExitCode {
+						t.Errorf("Expected exitcode: %v got: %v", test.expectedExitCode, exitCode)
+					}
+				}
+			}
+
+			t.Log(string(out))
+			checkCleanup(t, defaultNetworkCount)
+		})
+	}
 }
 
 func TestPod2DockerExitCode_Integration(t *testing.T) {
@@ -112,8 +360,6 @@ func TestPod2DockerExitCode_Integration(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-
-	t.Log(podCommand)
 
 	cmd := exec.Command("/bin/bash", "-c", podCommand)
 	tempdir, err := ioutil.TempDir("", "pod2docker")
@@ -160,12 +406,13 @@ func TestPod2DockerNetwork_Integration(t *testing.T) {
 		t.Error(err)
 	}
 
-	t.Log(podCommand)
-
 	cmd := exec.Command("/bin/bash", "-c", podCommand)
 
-	wd, _ := os.Getwd()
-	cmd.Dir = wd
+	tempdir, err := ioutil.TempDir("", "pod2docker")
+	if err != nil {
+		t.Error(err)
+	}
+	cmd.Dir = tempdir
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Error(err)
@@ -199,12 +446,13 @@ func TestPod2DockerInvalidContainerImage_Integration(t *testing.T) {
 		t.Error(err)
 	}
 
-	t.Log(podCommand)
-
 	cmd := exec.Command("/bin/bash", "-c", podCommand)
 
-	wd, _ := os.Getwd()
-	cmd.Dir = wd
+	tempdir, err := ioutil.TempDir("", "pod2docker")
+	if err != nil {
+		t.Error(err)
+	}
+	cmd.Dir = tempdir
 	out, err := cmd.CombinedOutput()
 
 	if err.Error() != "exit status 125" {
@@ -263,17 +511,13 @@ func TestPod2DockerIPCAndHostDir_Integration(t *testing.T) {
 		t.Error(err)
 	}
 
-	t.Log(podCommand)
-
 	cmd := exec.Command("/bin/bash", "-c", podCommand)
 
-	env := os.Getenv("HOSTDIR")
-	if env == "" {
-		wd, _ := os.Getwd()
-		cmd.Dir = wd
-	} else {
-		cmd.Dir = env
+	tempdir, err := ioutil.TempDir("", "pod2docker")
+	if err != nil {
+		t.Error(err)
 	}
+	cmd.Dir = tempdir
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Error(err)
@@ -387,4 +631,15 @@ func randFromSelection(length int, choices []rune) string {
 		b[i] = choices[rand.Intn(len(choices))]
 	}
 	return string(b)
+}
+
+func checkFileContents(name, expectedContent string, t *testing.T) {
+	b, err := ioutil.ReadFile(name) // just pass the file name
+	if err != nil {
+		t.Error(err)
+	}
+
+	if !strings.Contains(string(b), `{"log":"`+expectedContent) {
+		t.Errorf("Expected to contain: %v it didn't - got: %v", expectedContent, string(b))
+	}
 }
