@@ -1,6 +1,8 @@
 package pod2docker
 
 import (
+	"context"
+	"fmt"
 	"io/ioutil"
 	"math/rand"
 	"os"
@@ -9,8 +11,19 @@ import (
 	"testing"
 	"time"
 
+	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/api/types/filters"
+	"github.com/docker/docker/client"
 	apiv1 "k8s.io/api/core/v1"
 )
+
+var defaultNetworkCount = 0
+
+func TestMain(m *testing.M) {
+	defaultNetworkCount = getNetworkCount()
+	retCode := m.Run()
+	os.Exit(retCode)
+}
 
 func TestPod2DockerVolume_Integration(t *testing.T) {
 
@@ -71,6 +84,8 @@ func TestPod2DockerVolume_Integration(t *testing.T) {
 	}
 
 	t.Log(string(out))
+	checkCleanup(t, defaultNetworkCount)
+
 }
 
 func TestPod2DockerExitCode_Integration(t *testing.T) {
@@ -118,6 +133,7 @@ func TestPod2DockerExitCode_Integration(t *testing.T) {
 	}
 
 	t.Log(string(out))
+	checkCleanup(t, defaultNetworkCount)
 }
 
 func TestPod2DockerNetwork_Integration(t *testing.T) {
@@ -156,6 +172,48 @@ func TestPod2DockerNetwork_Integration(t *testing.T) {
 	}
 
 	t.Log(string(out))
+	checkCleanup(t, defaultNetworkCount)
+}
+
+func TestPod2DockerInvalidContainerImage_Integration(t *testing.T) {
+
+	containers := []apiv1.Container{
+		{
+			Name:  "sidecar",
+			Image: "doesntexist",
+		},
+		{
+			Name:    "worker",
+			Image:   "doesntexist",
+			Command: []string{"wget localhost"},
+		},
+	}
+
+	podCommand, err := GetBashCommand(PodComponents{
+		Containers: containers,
+		PodName:    randomName(6),
+		Volumes:    []apiv1.Volume{},
+	})
+
+	if err != nil {
+		t.Error(err)
+	}
+
+	t.Log(podCommand)
+
+	cmd := exec.Command("/bin/bash", "-c", podCommand)
+
+	wd, _ := os.Getwd()
+	cmd.Dir = wd
+	out, err := cmd.CombinedOutput()
+
+	if err.Error() != "exit status 125" {
+		t.Error("Expected exit status 125")
+		t.Error(err)
+	}
+
+	t.Log(string(out))
+	checkCleanup(t, defaultNetworkCount)
 }
 
 func TestPod2DockerIPCAndHostDir_Integration(t *testing.T) {
@@ -222,6 +280,97 @@ func TestPod2DockerIPCAndHostDir_Integration(t *testing.T) {
 	}
 
 	t.Log(string(out))
+	checkCleanup(t, defaultNetworkCount)
+}
+
+func getNetworkCount() int {
+	cli, err := client.NewEnvClient()
+	if err != nil {
+		panic(err)
+	}
+
+	ctx := context.Background()
+
+	networks, err := cli.NetworkList(ctx, types.NetworkListOptions{})
+	if err != nil {
+		panic(err)
+	}
+	return len(networks)
+}
+
+func checkCleanup(t *testing.T, defaultNetworkCount int) {
+	cli, err := client.NewEnvClient()
+	if err != nil {
+		t.Error(err)
+		t.FailNow()
+	}
+
+	ctx := context.Background()
+
+	containers, err := cli.ContainerList(ctx, types.ContainerListOptions{})
+	if err != nil {
+		t.Error(err)
+		t.FailNow()
+	}
+
+	if len(containers) > 1 {
+		t.Error("Container left after pod2docker exit!")
+		t.Error("Integration tests expect to be run on clean docker deamon with no other containers running")
+	}
+
+	for _, container := range containers {
+		if container.Names[0] == "/pod2dockerci" {
+			continue
+		}
+		fmt.Print("Stopping container ", container.ID[:10], "... ")
+		if err := cli.ContainerStop(ctx, container.ID, nil); err != nil {
+			t.Error(err)
+			t.FailNow()
+		}
+		fmt.Print("Removing container ", container.ID[:10], "... ")
+		if err := cli.ContainerRemove(ctx, container.ID, types.ContainerRemoveOptions{Force: true, RemoveVolumes: true}); err != nil {
+			t.Error(err)
+			t.FailNow()
+		}
+		fmt.Println("Success")
+	}
+
+	networks, err := cli.NetworkList(ctx, types.NetworkListOptions{})
+	if err != nil {
+		t.Error(err)
+		t.FailNow()
+	}
+
+	if len(networks) > defaultNetworkCount {
+		t.Error("Network left after pod2docker exit!")
+		t.Error("Integration tests expect to be run on clean docker deamon with the standard default networks")
+		for _, network := range networks {
+			fmt.Print("Removing network ", network.ID[:10], "... ")
+			if err := cli.NetworkRemove(ctx, network.ID); err != nil {
+				t.Logf("Failed to remove network ID: %v... expected for builtin networks", network.ID)
+			}
+			fmt.Println("Success")
+		}
+	}
+
+	volumes, err := cli.VolumeList(ctx, filters.Args{})
+	if err != nil {
+		t.Error(err)
+		t.FailNow()
+	}
+
+	if len(volumes.Volumes) > 0 {
+		t.Error("Volume left after pod2docker exit!")
+		t.Error("Integration tests expect to be run on clean docker deamon with no volumes present before starting")
+	}
+
+	for _, volume := range volumes.Volumes {
+		fmt.Print("Removing volume ", volume.Name)
+		if err := cli.VolumeRemove(ctx, volume.Name, true); err != nil {
+			t.Error(err)
+		}
+		fmt.Println("Success")
+	}
 }
 
 var lettersLower = []rune("abcdefghijklmnopqrstuvwxyz")
