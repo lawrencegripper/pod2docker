@@ -17,4 +17,4 @@ RUN dep ensure -vendor-only
 COPY . .
 RUN gometalinter --vendor --disable-all --exclude=/go/src/ --enable=errcheck --enable=vet --enable=gofmt --enable=golint --enable=deadcode --enable=varcheck --enable=structcheck --deadline=5m ./...
 ENTRYPOINT [ "go" ]
-CMD ["test", "./..."] 
+CMD ["test", "-v", "./..."] 

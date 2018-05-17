@@ -70,8 +70,6 @@ func TestPod2DockerVolume_Integration(t *testing.T) {
 		t.Error(err)
 	}
 
-	t.Log(podCommand)
-
 	cmd := exec.Command("/bin/bash", "-c", podCommand)
 	tempdir, err := ioutil.TempDir("", "pod2docker")
 	if err != nil {
@@ -89,66 +87,191 @@ func TestPod2DockerVolume_Integration(t *testing.T) {
 }
 
 func TestPod2DockerInitContainer_Integration(t *testing.T) {
-
-	initContainers := []apiv1.Container{
+	testcases := []struct {
+		name             string
+		initContainers   []apiv1.Container
+		containers       []apiv1.Container
+		expectedExitCode int
+	}{
 		{
-			Name:  "sidecar",
-			Image: "ubuntu",
-			VolumeMounts: []apiv1.VolumeMount{
+			name: "failing single init container",
+			initContainers: []apiv1.Container{
 				{
-					Name:      "sharedvolume",
-					MountPath: "/home",
+					Name:  "sidecar",
+					Image: "ubuntu",
+					VolumeMounts: []apiv1.VolumeMount{
+						{
+							Name:      "sharedvolume",
+							MountPath: "/home",
+						},
+					},
+					Command: []string{"bash -c 'exit 10'"},
 				},
 			},
-			Command: []string{"bash -c 'exit 10'"},
-		},
-	}
-	containers := []apiv1.Container{
-		{
-			Name:  "sidecar",
-			Image: "ubuntu",
-			VolumeMounts: []apiv1.VolumeMount{
+			containers: []apiv1.Container{
 				{
-					Name:      "sharedvolume",
-					MountPath: "/home",
+					Name:  "sidecar",
+					Image: "ubuntu",
+					VolumeMounts: []apiv1.VolumeMount{
+						{
+							Name:      "sharedvolume",
+							MountPath: "/home",
+						},
+					},
+					Command: []string{"bash -c 'exit 13'"},
 				},
 			},
-			Command: []string{"bash -c 'exit 13'"},
+			expectedExitCode: 10,
+		},
+		{
+			name: "failing second init container",
+			initContainers: []apiv1.Container{
+				{
+					Name:  "sidecar",
+					Image: "ubuntu",
+					VolumeMounts: []apiv1.VolumeMount{
+						{
+							Name:      "sharedvolume",
+							MountPath: "/home",
+						},
+					},
+					Command: []string{"echo 'first init container'"},
+				},
+				{
+					Name:  "sidecar",
+					Image: "ubuntu",
+					VolumeMounts: []apiv1.VolumeMount{
+						{
+							Name:      "sharedvolume",
+							MountPath: "/home",
+						},
+					},
+					Command: []string{"bash -c 'exit 11'"},
+				},
+			},
+			containers: []apiv1.Container{
+				{
+					Name:  "sidecar",
+					Image: "ubuntu",
+					VolumeMounts: []apiv1.VolumeMount{
+						{
+							Name:      "sharedvolume",
+							MountPath: "/home",
+						},
+					},
+					Command: []string{"bash -c 'exit 13'"},
+				},
+			},
+			expectedExitCode: 11,
+		},
+		{
+			name: "successful single init container",
+			initContainers: []apiv1.Container{
+				{
+					Name:  "sidecar",
+					Image: "ubuntu",
+					VolumeMounts: []apiv1.VolumeMount{
+						{
+							Name:      "sharedvolume",
+							MountPath: "/home",
+						},
+					},
+					Command: []string{"echo 'hello'"},
+				},
+			},
+			containers: []apiv1.Container{
+				{
+					Name:  "sidecar",
+					Image: "ubuntu",
+					VolumeMounts: []apiv1.VolumeMount{
+						{
+							Name:      "sharedvolume",
+							MountPath: "/home",
+						},
+					},
+					Command: []string{"bash -c 'exit 13'"},
+				},
+			},
+			expectedExitCode: 13,
+		},
+		{
+			name: "sucessful double init container",
+			initContainers: []apiv1.Container{
+				{
+					Name:  "sidecar",
+					Image: "ubuntu",
+					VolumeMounts: []apiv1.VolumeMount{
+						{
+							Name:      "sharedvolume",
+							MountPath: "/home",
+						},
+					},
+					Command: []string{"echo 'hello'"},
+				},
+				{
+					Name:  "sidecar",
+					Image: "ubuntu",
+					VolumeMounts: []apiv1.VolumeMount{
+						{
+							Name:      "sharedvolume",
+							MountPath: "/home",
+						},
+					},
+					Command: []string{"echo 'world'"},
+				},
+			},
+			containers: []apiv1.Container{
+				{
+					Name:  "sidecar",
+					Image: "ubuntu",
+					VolumeMounts: []apiv1.VolumeMount{
+						{
+							Name:      "sharedvolume",
+							MountPath: "/home",
+						},
+					},
+					Command: []string{"bash -c 'exit 13'"},
+				},
+			},
+			expectedExitCode: 13,
 		},
 	}
 
-	podCommand, err := GetBashCommand(PodComponents{
-		Containers:     containers,
-		InitContainers: initContainers,
-		PodName:        randomName(6),
-	})
+	for _, test := range testcases {
+		t.Run(test.name, func(t *testing.T) {
+			podCommand, err := GetBashCommand(PodComponents{
+				Containers:     test.containers,
+				InitContainers: test.initContainers,
+				PodName:        randomName(6),
+			})
 
-	if err != nil {
-		t.Error(err)
-	}
-
-	t.Log(podCommand)
-
-	cmd := exec.Command("/bin/bash", "-c", podCommand)
-	tempdir, err := ioutil.TempDir("", "pod2docker")
-	if err != nil {
-		t.Error(err)
-	}
-	cmd.Dir = tempdir
-	out, err := cmd.CombinedOutput()
-	if exiterr, ok := err.(*exec.ExitError); ok {
-		// The program has exited with an exit code != 0
-		if status, ok := exiterr.Sys().(syscall.WaitStatus); ok {
-			exitCode := status.ExitStatus()
-			if exitCode != 10 {
-				t.Errorf("Expected exitcode 10 got: %v", exitCode)
+			if err != nil {
+				t.Error(err)
 			}
-		}
+
+			//
+
+			cmd := exec.Command("/bin/bash", "-c", podCommand)
+			tempdir, err := ioutil.TempDir("", "pod2docker")
+			if err != nil {
+				t.Error(err)
+			}
+			cmd.Dir = tempdir
+			out, err := cmd.CombinedOutput()
+			if exiterr, ok := err.(*exec.ExitError); ok {
+				// The program has exited with an exit code != 0
+				if status, ok := exiterr.Sys().(syscall.WaitStatus); ok {
+					exitCode := status.ExitStatus()
+					if exitCode != test.expectedExitCode {
+						t.Errorf("Expected exitcode: %v got: %v", test.expectedExitCode, exitCode)
+					}
+				}
+			}
+
+			t.Log(string(out))
+			checkCleanup(t, defaultNetworkCount)
+		})
 	}
-
-	t.Log(string(out))
-	checkCleanup(t, defaultNetworkCount)
-
 }
 
 func TestPod2DockerExitCode_Integration(t *testing.T) {
@@ -175,8 +298,6 @@ func TestPod2DockerExitCode_Integration(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-
-	t.Log(podCommand)
 
 	cmd := exec.Command("/bin/bash", "-c", podCommand)
 	tempdir, err := ioutil.TempDir("", "pod2docker")
@@ -223,8 +344,6 @@ func TestPod2DockerNetwork_Integration(t *testing.T) {
 		t.Error(err)
 	}
 
-	t.Log(podCommand)
-
 	cmd := exec.Command("/bin/bash", "-c", podCommand)
 
 	wd, _ := os.Getwd()
@@ -261,8 +380,6 @@ func TestPod2DockerInvalidContainerImage_Integration(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-
-	t.Log(podCommand)
 
 	cmd := exec.Command("/bin/bash", "-c", podCommand)
 
@@ -325,8 +442,6 @@ func TestPod2DockerIPCAndHostDir_Integration(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-
-	t.Log(podCommand)
 
 	cmd := exec.Command("/bin/bash", "-c", podCommand)
 
